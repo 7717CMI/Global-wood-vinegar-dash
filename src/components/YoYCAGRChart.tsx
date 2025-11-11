@@ -10,20 +10,23 @@ import {
   Legend,
 } from 'recharts'
 import { useTheme } from '../context/ThemeContext'
+import { getChartColors } from '../utils/chartColors'
 
 interface YoYCAGRChartProps {
   data: Array<{
     year: string
-    yoy: number
-    cagr: number
+    yoy?: number
+    cagr?: number
     [key: string]: any
   }>
+  productTypes?: string[]
   xAxisLabel?: string
   yAxisLabel?: string
 }
 
 export function YoYCAGRChart({ 
   data, 
+  productTypes = [],
   xAxisLabel = 'Year', 
   yAxisLabel = 'Growth Rate (%)'
 }: YoYCAGRChartProps) {
@@ -50,7 +53,7 @@ export function YoYCAGRChart({
           <p className="font-bold text-base mb-2">Year: {label}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
-              <strong>{entry.name}:</strong> {entry.value.toFixed(2)}%
+              <strong>{entry.name}:</strong> {entry.value !== null && entry.value !== undefined ? entry.value.toFixed(2) : 'N/A'}%
             </p>
           ))}
         </div>
@@ -59,8 +62,9 @@ export function YoYCAGRChart({
     return null
   }
 
-  const dataKeys = showCAGR ? ['cagr'] : ['yoy']
-  const colors = showCAGR ? ['#4ECDC4'] : ['#0075FF']
+  // If productTypes are provided, use them as data keys; otherwise use default yoy/cagr
+  const dataKeys = productTypes.length > 0 ? productTypes : (showCAGR ? ['cagr'] : ['yoy'])
+  const colors = getChartColors(dataKeys.length)
 
   return (
     <div className="relative w-full h-full">
@@ -173,7 +177,7 @@ export function YoYCAGRChart({
               key={key}
               type="monotone"
               dataKey={key}
-              name={showCAGR ? 'CAGR (%)' : 'Y-o-Y Growth (%)'}
+              name={productTypes.length > 0 ? key : (showCAGR ? 'CAGR (%)' : 'Y-o-Y Growth (%)')}
               stroke={colors[index % colors.length]}
               strokeWidth={3}
               dot={{ r: 5 }}

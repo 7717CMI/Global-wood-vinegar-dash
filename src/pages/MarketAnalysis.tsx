@@ -61,9 +61,9 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
 
   // Separate filters for YoY/CAGR tab
   const [yoyFilters, setYoyFilters] = useState({
-    region: ['North America'] as string[],
+    region: [] as string[],
     productType: [] as string[],
-    country: ['U.S.', 'Canada'] as string[],
+    country: [] as string[],
   })
 
   useEffect(() => {
@@ -114,6 +114,19 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
             distributionChannelType: [],
             distributionChannel: [],
             marketEvaluation: 'By Value',
+          })
+          
+          // Set default for Y-o-Y filters: one country and all product types
+          const defaultYoyCountry = availableCountries.length > 0 && availableCountries.includes('U.S.')
+            ? ['U.S.']
+            : availableCountries.length > 0
+              ? [availableCountries[0]]
+              : []
+          
+          setYoyFilters({
+            region: [],
+            country: defaultYoyCountry,
+            productType: availableProductTypes.length > 0 ? availableProductTypes : []
           })
         }, 0)
       } catch (error) {
@@ -925,6 +938,9 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
         const years = endYear - startYear
         cagr = (Math.pow(endValue / startValue, 1 / years) - 1) * 100
       }
+      
+      // Ensure CAGR is non-negative (minimum 0)
+      cagr = Math.max(0, cagr)
 
       // Calculate Market Share Index (average market share across years)
       const itemTotal = itemData.values.reduce((sum, v) => sum + v, 0)
@@ -945,7 +961,8 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
     const cagrValues = rawBubbleData.map(d => d.cagr)
     const marketShareValues = rawBubbleData.map(d => d.marketShare)
 
-    const minCagr = Math.min(...cagrValues)
+    // Ensure minimum CAGR is 0 (no negative values)
+    const minCagr = Math.max(0, Math.min(...cagrValues))
     const maxCagr = Math.max(...cagrValues)
     const minShare = Math.min(...marketShareValues)
     const maxShare = Math.max(...marketShareValues)
@@ -953,21 +970,35 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
     const cagrRange = maxCagr - minCagr
     const shareRange = maxShare - minShare
 
-    // Second pass: normalize with better spread
+    // Second pass: normalize with better spread and ensure unique positions
     const bubbleData = rawBubbleData.map((item, index) => {
       // Scale to 0-10 range with better distribution
       let cagrIndex = 5.0
       let marketShareIndex = 5.0
 
       if (cagrRange > 0) {
-        // Normalize to 0-10 based on actual min/max range
+        // Normalize to 0-10 based on actual min/max range (minCagr is now guaranteed to be >= 0)
         cagrIndex = ((item.cagr - minCagr) / cagrRange) * 10
+      } else {
+        // If all CAGR values are the same, distribute them evenly
+        cagrIndex = (index / Math.max(1, rawBubbleData.length - 1)) * 10
       }
 
       if (shareRange > 0) {
         // Normalize to 0-10 based on actual min/max range
         marketShareIndex = ((item.marketShare - minShare) / shareRange) * 10
+      } else {
+        // If all market share values are the same, distribute them evenly
+        marketShareIndex = (index / Math.max(1, rawBubbleData.length - 1)) * 10
       }
+      
+      // Add small unique offsets to ensure no two bubbles have exactly the same position
+      // Use index-based offset to ensure determinism
+      const uniqueOffsetCagr = (index % 10) * 0.01 // Small offset based on index
+      const uniqueOffsetShare = ((index * 7) % 10) * 0.01 // Different pattern for Y-axis
+      
+      cagrIndex = cagrIndex + uniqueOffsetCagr
+      marketShareIndex = marketShareIndex + uniqueOffsetShare
 
       return {
         region: item.region, // Using 'region' field for compatibility with BubbleChart component
@@ -1049,7 +1080,7 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
     return filtered
   }, [data, yoyFilters])
 
-  // YoY/CAGR Chart Data - Generate separate data for each country/region (no summation)
+  // YoY/CAGR Chart Data - Generate separate data for each country/region with product type lines
   const yoyCagrDataByEntity = useMemo(() => {
     // Determine which entities to create charts for
     const entities: Array<{ type: 'country' | 'region', name: string, label: string }> = []
@@ -1082,8 +1113,16 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
       return []
     }
     
-    // Generate data for each entity
-    const entityDataMap = new Map<string, Array<{ year: string, yoy: number, cagr: number }>>()
+    // Get selected product types (default to all if empty)
+    const selectedProductTypes = yoyFilters.productType.length > 0 
+      ? yoyFilters.productType 
+      : yoyFilterOptions.productTypes
+    
+    // Generate data for each entity with product type lines
+    const entityDataMap = new Map<string, { 
+      data: Array<{ year: string, [key: string]: any }>, 
+      productTypes: string[] 
+    }>()
     
     entities.forEach(entity => {
       // Filter data for this specific entity
@@ -1095,65 +1134,75 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
         entityFilteredData = entityFilteredData.filter(d => d.region === entity.name)
       }
       
-      // Group data by year for this entity (no summation across entities)
-      const yearDataMap = new Map<number, number>()
+      // Group data by year and product type
+      const yearProductDataMap = new Map<number, Map<string, number>>()
+      const allYears = new Set<number>()
       
       entityFilteredData.forEach(d => {
+        if (!selectedProductTypes.includes(d.productType)) return
+        
         const year = d.year
+        const productType = d.productType
         const value = (d.marketValueUsd || 0) / 1000 // Convert to millions
-        yearDataMap.set(year, (yearDataMap.get(year) || 0) + value)
+        
+        allYears.add(year)
+        
+        if (!yearProductDataMap.has(year)) {
+          yearProductDataMap.set(year, new Map<string, number>())
+        }
+        
+        const productMap = yearProductDataMap.get(year)!
+        productMap.set(productType, (productMap.get(productType) || 0) + value)
       })
       
       // Sort years
-      const years = Array.from(yearDataMap.keys()).sort()
+      const years = Array.from(allYears).sort()
       
       if (years.length < 2) {
         // Not enough data for YoY/CAGR calculation
         return
       }
       
-      // Calculate YoY and CAGR for each year
-      const chartData = years.map((year, index) => {
-        const currentValue = yearDataMap.get(year) || 0
-        
-        // Calculate YoY (Year-over-Year) growth
-        let yoy = 0
-        if (index > 0) {
-          const previousYear = years[index - 1]
-          const previousValue = yearDataMap.get(previousYear) || 0
-          if (previousValue > 0) {
-            yoy = ((currentValue - previousValue) / previousValue) * 100
-          }
+      // Calculate YoY for each product type for each year
+      const chartData = years.map((year, yearIndex) => {
+        const yearData: { year: string, [key: string]: any } = {
+          year: String(year)
         }
         
-        // Calculate CAGR from first year to current year
-        let cagr = 0
-        if (index > 0) {
-          const firstYear = years[0]
-          const firstValue = yearDataMap.get(firstYear) || 0
-          if (firstValue > 0 && currentValue > 0) {
-            const yearsDiff = year - firstYear
-            if (yearsDiff > 0) {
-              cagr = (Math.pow(currentValue / firstValue, 1 / yearsDiff) - 1) * 100
+        selectedProductTypes.forEach(productType => {
+          const currentYearData = yearProductDataMap.get(year) || new Map()
+          const currentValue = currentYearData.get(productType) || 0
+          
+          // Calculate YoY (Year-over-Year) growth for this product type
+          let yoy = 0
+          if (yearIndex > 0) {
+            const previousYear = years[yearIndex - 1]
+            const previousYearData = yearProductDataMap.get(previousYear) || new Map()
+            const previousValue = previousYearData.get(productType) || 0
+            if (previousValue > 0) {
+              yoy = ((currentValue - previousValue) / previousValue) * 100
             }
           }
-        }
+          
+          // Store YoY value with product type as key
+          yearData[productType] = yoy
+        })
         
-        return {
-          year: String(year),
-          yoy: yoy,
-          cagr: cagr,
-        }
+        return yearData
       })
       
-      entityDataMap.set(entity.label, chartData)
+      entityDataMap.set(entity.label, {
+        data: chartData,
+        productTypes: selectedProductTypes
+      })
     })
     
-    return Array.from(entityDataMap.entries()).map(([label, data]) => ({
+    return Array.from(entityDataMap.entries()).map(([label, { data, productTypes }]) => ({
       label,
-      data
+      data,
+      productTypes
     }))
-  }, [filteredYoyData, yoyFilters.country, yoyFilters.region])
+  }, [filteredYoyData, yoyFilters.country, yoyFilters.region, yoyFilters.productType, yoyFilterOptions.productTypes])
 
   if (loading) {
     return (
@@ -1852,7 +1901,7 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
                     options={attractivenessFilterOptions.countries}
                   />
                   <FilterDropdown
-                    label="Product Type"
+                    label="Segment Type"
                     value={attractivenessFilters.selectedCategory || ''}
                     onChange={(value) => {
                       setAttractivenessFilters({ ...attractivenessFilters, selectedCategory: value as string })
@@ -1960,15 +2009,21 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
                     value={yoyFilters.region}
                     onChange={(value) => {
                       const newRegions = value as string[]
-                      // Clear country selection when region changes to avoid invalid states
-                      setYoyFilters({ ...yoyFilters, region: newRegions, country: [] })
+                      // Clear country selection when region changes and limit to one region to avoid clubbing
+                      const singleRegion = newRegions.length > 0 ? [newRegions[newRegions.length - 1]] : []
+                      setYoyFilters({ ...yoyFilters, region: singleRegion, country: [] })
                     }}
                     options={yoyFilterOptions.regions}
                   />
                   <FilterDropdown
                     label="Country"
                     value={yoyFilters.country}
-                    onChange={(value) => setYoyFilters({ ...yoyFilters, country: value as string[] })}
+                    onChange={(value) => {
+                      const newCountries = value as string[]
+                      // Clear region selection when country changes and limit to one country
+                      const singleCountry = newCountries.length > 0 ? [newCountries[newCountries.length - 1]] : []
+                      setYoyFilters({ ...yoyFilters, country: singleCountry, region: [] })
+                    }}
                     options={yoyFilterOptions.countries}
                     optionLabels={yoyFilterOptions.countryOptions.reduce((acc, opt) => {
                       acc[opt.value] = opt.label
@@ -2022,6 +2077,7 @@ export function MarketAnalysis({ onNavigate }: MarketAnalysisProps) {
                         <div className="flex-1 flex items-center justify-center min-h-0 pt-2">
                           <YoYCAGRChart
                             data={entity.data}
+                            productTypes={entity.productTypes}
                             xAxisLabel="Year"
                             yAxisLabel="Growth Rate (%)"
                           />

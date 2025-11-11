@@ -53,20 +53,139 @@ export function BubbleChart({
   const minOpportunity = Math.min(...data.map(d => d.incrementalOpportunity))
   const sizeRange = maxOpportunity - minOpportunity
 
+  // Find the bubble with maximum incremental opportunity (most attractive)
+  const maxOpportunityIndex = data.findIndex(d => d.incrementalOpportunity === maxOpportunity)
+
   const transformedData = useMemo(() => {
-    return data.map(item => {
-      // Scale bubble size (min 30, max 200) - Recharts uses 'z' for bubble size
-      const normalizedSize = sizeRange > 0
-        ? 30 + ((item.incrementalOpportunity - minOpportunity) / sizeRange) * 170
-        : 100
+    // Calculate current min/max for positioning (before transformation)
+    const cagrMin = Math.min(...data.map(d => d.cagrIndex))
+    const cagrMax = Math.max(...data.map(d => d.cagrIndex))
+    const shareMin = Math.min(...data.map(d => d.marketShareIndex))
+    const shareMax = Math.max(...data.map(d => d.marketShareIndex))
+    const cagrRange = cagrMax - cagrMin
+    const shareRange = shareMax - shareMin
+    
+    // Calculate base sizes for all bubbles (excluding the max opportunity one)
+    // Increased by 40% from previous sizes
+    const baseMaxSize = 35 // Maximum size for regular bubbles (25 * 1.4 = 35)
+    const baseMinSize = 11 // Minimum size for regular bubbles (8 * 1.4 = 11.2, rounded to 11)
+    
+    // First pass: calculate sizes and initial positions
+    const bubblesWithSizes = data.map((item, index) => {
+      // Scale bubble size (min 11, max 35) - increased by 40%
+      let normalizedSize = sizeRange > 0
+        ? baseMinSize + ((item.incrementalOpportunity - minOpportunity) / sizeRange) * (baseMaxSize - baseMinSize)
+        : 20
+      
+      let cagrIndex = item.cagrIndex
+      let marketShareIndex = item.marketShareIndex
+      
+      // If this is the bubble with max opportunity, position it in upper right and make it larger
+      if (index === maxOpportunityIndex) {
+        // Position in upper right quadrant
+        // Calculate position to be approximately 100 pixels to the right
+        // Typical chart: ~800px container width, ~100px left margin, ~60px right margin = ~640px plot area
+        // If range is cagrRange, then pixels per unit = 640 / cagrRange
+        // For 100 pixels: chartUnits = 100 / (640 / cagrRange) = 100 * cagrRange / 640
+        // Using a more conservative estimate: assume typical plot area of ~600px
+        const typicalPlotWidth = 600 // pixels
+        const pixelsToRight = 100
+        const chartUnitsToRight = cagrRange > 0 
+          ? (pixelsToRight * cagrRange) / typicalPlotWidth
+          : 2.0 // Default to 2 units if range is 0
+        
+        // Position at max + offset to the right
+        cagrIndex = cagrMax + chartUnitsToRight // Position 100px to the right of max
+        marketShareIndex = shareMin + (shareRange * 0.85) // 85% towards max (upper side)
+        
+        // Make it larger (reduced by 30% from previous: was 4.5x, now 3.15x)
+        // Previous: baseMaxSize * 4.5 = 35 * 4.5 = 157.5
+        // Reduced by 30%: 157.5 * 0.7 = 110.25
+        normalizedSize = Math.max(110, baseMaxSize * 3.15)
+      }
       
       return {
         ...item,
-        z: normalizedSize, // Recharts uses 'z' for bubble size
-        size: normalizedSize, // Keep for custom shape
+        cagrIndex,
+        marketShareIndex,
+        size: normalizedSize,
+        radius: normalizedSize / 2,
+        originalIndex: index,
       }
     })
-  }, [data, maxOpportunity, minOpportunity, sizeRange])
+    
+    // Second pass: adjust positions to prevent overlaps (iterative approach)
+    let adjustedBubbles = bubblesWithSizes.map((bubble, index) => ({
+      ...bubble,
+      cagrIndex: bubble.cagrIndex,
+      marketShareIndex: bubble.marketShareIndex,
+      z: bubble.size,
+    }))
+    
+    // Iterate multiple times to resolve all overlaps (increased iterations for better resolution)
+    const maxIterations = 15
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      let hasOverlap = false
+      
+      adjustedBubbles = adjustedBubbles.map((bubble, index) => {
+        // Don't adjust the large bubble position
+        if (index === maxOpportunityIndex) {
+          return bubble
+        }
+        
+        let adjustedCagr = bubble.cagrIndex
+        let adjustedShare = bubble.marketShareIndex
+        const bubbleRadius = bubble.radius
+        
+        // Check for collisions with other bubbles
+        for (let i = 0; i < adjustedBubbles.length; i++) {
+          if (i === index) continue
+          
+          const otherBubble = adjustedBubbles[i]
+          const otherRadius = otherBubble.radius
+          // Increased buffer to 30% to ensure no overlaps (was 25%)
+          const otherMinDistance = (bubbleRadius + otherRadius) * 1.30 // Combined radius + 30% buffer
+          
+          // Calculate distance between bubble centers
+          const dx = adjustedCagr - otherBubble.cagrIndex
+          const dy = adjustedShare - otherBubble.marketShareIndex
+          const distance = Math.sqrt(dx * dx + dy * dy)
+          
+          // If bubbles are too close, adjust position
+          if (distance < otherMinDistance && distance > 0.001) {
+            hasOverlap = true
+            
+            // Calculate angle between bubbles
+            const angle = Math.atan2(dy, dx)
+            
+            // Move this bubble away from the other bubble
+            const requiredDistance = otherMinDistance
+            // Move 60% of required distance per iteration for faster convergence (was 50%)
+            const moveDistance = (requiredDistance - distance) * 0.6
+            
+            // Adjust position away from the other bubble
+            adjustedCagr = adjustedCagr + Math.cos(angle) * moveDistance
+            adjustedShare = adjustedShare + Math.sin(angle) * moveDistance
+            
+            // Keep within reasonable bounds (allow some overflow for padding)
+            adjustedCagr = Math.max(cagrMin - cagrRange * 0.5, Math.min(cagrMax + cagrRange * 0.5, adjustedCagr))
+            adjustedShare = Math.max(shareMin - shareRange * 0.5, Math.min(shareMax + shareRange * 0.5, adjustedShare))
+          }
+        }
+        
+        return {
+          ...bubble,
+          cagrIndex: adjustedCagr,
+          marketShareIndex: adjustedShare,
+        }
+      })
+      
+      // If no overlaps found, we're done
+      if (!hasOverlap) break
+    }
+    
+    return adjustedBubbles
+  }, [data, maxOpportunity, minOpportunity, sizeRange, maxOpportunityIndex])
 
   // Calculate padding needed for largest bubble to be fully visible
   // We need to add sufficient padding to ensure the largest bubble doesn't get cut off
@@ -77,11 +196,17 @@ export function BubbleChart({
   const shareMax = Math.max(...transformedData.map(d => d.marketShareIndex))
   const shareRange = shareMax - shareMin
   
-  // Calculate padding: use a percentage of the range to ensure proper padding
-  // Very generous padding to account for largest bubble radius (up to 100px radius)
-  // Use 40-45% of range to ensure largest bubbles are fully visible with no clipping
-  const cagrPadding = Math.max(2.5, cagrRange * 0.45) // 45% of range, minimum 2.5
-  const sharePadding = Math.max(1.2, shareRange * 0.45) // 45% of range, minimum 1.2
+  // Find the largest bubble size to calculate proper padding
+  const maxBubbleSize = Math.max(...transformedData.map(d => d.size || d.z || 60))
+  const maxBubbleRadius = maxBubbleSize / 2
+  
+  // Calculate padding: use a percentage of the range plus bubble radius to ensure proper spacing
+  // Increased padding to reduce overlap and ensure largest bubble is fully visible
+  // Convert bubble radius to index units (approximate: 1 index unit ≈ chart width/10)
+  // Use 60-70% of range plus buffer for bubble radius to ensure no clipping and better spacing
+  // More padding needed for the very large bubble in upper right
+  const cagrPadding = Math.max(4.0, (cagrRange * 0.65) + (maxBubbleRadius / 40)) // 65% of range + bubble buffer
+  const sharePadding = Math.max(2.0, (shareRange * 0.65) + (maxBubbleRadius / 40)) // 65% of range + bubble buffer
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {

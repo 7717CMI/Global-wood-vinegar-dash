@@ -94,6 +94,8 @@ export function WaterfallChart({
     if (active && payload && payload.length) {
       const data = payload[0].payload
       const isBase = data.isBase
+      const currentYear = parseInt(label)
+      const previousYear = currentYear - 1
       
       return (
         <div className={`p-4 rounded-lg border-2 shadow-lg ${
@@ -109,7 +111,7 @@ export function WaterfallChart({
           ) : (
             <>
               <p className="text-sm">
-                <strong>Base Value (from previous):</strong> {formatWithCommas(data.basePortion || 0, 1)} US$ Mn
+                <strong>Base Value {previousYear}:</strong> {formatWithCommas(data.basePortion || 0, 1)} US$ Mn
               </p>
               <p className="text-sm">
                 <strong>Incremental $ Opportunity Value:</strong> {formatWithCommas(data.incrementalValue || 0, 1)} US$ Mn
@@ -144,10 +146,10 @@ export function WaterfallChart({
         </span>
       </div>
 
-      {/* Bold Title - Incremental $ Opportunity Analysis */}
+      {/* Bold Title - Incremental Opportunity Analysis ($) */}
       <div className="absolute top-4 left-0 right-0 z-20 text-center mb-4">
         <h3 className="text-2xl font-bold text-electric-blue dark:text-cyan-accent">
-          Incremental $ Opportunity Analysis
+          Incremental Opportunity Analysis ($)
         </h3>
       </div>
 
