@@ -241,7 +241,7 @@ export function CustomerIntelligence({ onNavigate }: CustomerIntelligenceProps) 
           North America and Europe Image Consulting Market Database
         </h1>
         <p className="text-lg text-text-secondary-light dark:text-text-secondary-dark">
-          Comprehensive intelligence on global retail self-scanning solution market
+          Comprehensive intelligence on global image consulting market
         </p>
       </motion.div>
 
