@@ -77,7 +77,7 @@ North America and Europe Image Consulting Market
             Select Analysis Category
           </h2>
           <p className="text-center text-text-secondary-light dark:text-text-secondary-dark mb-8">
-            Choose your analysis approach to explore global wood vinegar market data
+            Choose your analysis approach to explore global image consulting market
           </p>
         </motion.div>
 
