@@ -238,7 +238,7 @@ export function CustomerIntelligence({ onNavigate }: CustomerIntelligenceProps) 
         className="mb-8 text-center"
       >
         <h1 className="text-4xl font-bold text-text-primary-light dark:text-text-primary-dark mb-3 uppercase">
-          GLOBAL RETAIL SELF SCANNING SOLUTION MARKET DATABASE
+          North America and Europe Image Consulting Market Database
         </h1>
         <p className="text-lg text-text-secondary-light dark:text-text-secondary-dark">
           Comprehensive intelligence on global retail self-scanning solution market
@@ -256,7 +256,7 @@ export function CustomerIntelligence({ onNavigate }: CustomerIntelligenceProps) 
                 : 'text-text-secondary-light dark:text-text-secondary-dark hover:text-electric-blue dark:hover:text-cyan-accent'
             }`}
           >
-            Proposition 1
+            Proposition 1 - Basic
           </button>
           <button
             onClick={() => setActiveTab('proposition2')}
@@ -266,7 +266,7 @@ export function CustomerIntelligence({ onNavigate }: CustomerIntelligenceProps) 
                 : 'text-text-secondary-light dark:text-text-secondary-dark hover:text-electric-blue dark:hover:text-cyan-accent'
             }`}
           >
-            Proposition 2
+            Proposition 2 - Advanced
           </button>
           <button
             onClick={() => setActiveTab('proposition3')}
@@ -276,7 +276,7 @@ export function CustomerIntelligence({ onNavigate }: CustomerIntelligenceProps) 
                 : 'text-text-secondary-light dark:text-text-secondary-dark hover:text-electric-blue dark:hover:text-cyan-accent'
             }`}
           >
-            Proposition 3
+            Proposition 3 - Premium
           </button>
         </div>
       </div>
